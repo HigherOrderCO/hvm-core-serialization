@@ -1,7 +1,8 @@
 #![feature(slice_group_by)]
 #![feature(is_sorted)]
 #![doc = include_str!("../README.md")]
-use bitbuffer::{BitRead, BitWrite, Endianness, LittleEndian};
+pub use bitbuffer::{BigEndian, LittleEndian};
+use bitbuffer::{BitRead, BitReadSized, BitWrite, Endianness};
 
 pub mod net;
 pub mod scalars;
@@ -16,6 +17,10 @@ pub fn encode(value: &impl BitWrite<LittleEndian>) -> Vec<u8> {
 /// Decodes a tree/net/wiring from a byte slice using little endian
 pub fn decode<'a, T: BitRead<'a, LittleEndian>>(bytes: &[u8]) -> T {
   decode_endian(bytes, LittleEndian)
+}
+
+pub fn decode_sized<'a, T: BitReadSized<'a, LittleEndian>>(bytes: &[u8], size: usize) -> T {
+  decode_sized_endian(bytes, LittleEndian, size)
 }
 
 pub fn encode_endian<E>(value: &impl BitWrite<E>, endianness: E) -> Vec<u8>
@@ -38,11 +43,20 @@ where
   read_stream.read::<T>().unwrap()
 }
 
+pub fn decode_sized_endian<'a, E, T>(bytes: &[u8], endianness: E, size: usize) -> T
+where
+  E: Endianness,
+  T: BitReadSized<'a, E>,
+{
+  let read_buffer = bitbuffer::BitReadBuffer::new_owned(bytes.to_vec(), endianness);
+  let mut read_stream = bitbuffer::BitReadStream::new(read_buffer);
+  read_stream.read_sized::<T>(size).unwrap()
+}
+
 #[cfg(test)]
 mod tests {
   use super::net::Net;
   use super::*;
-  use bitbuffer::BigEndian;
   use hvmc::ast::do_parse_net;
 
   #[test]

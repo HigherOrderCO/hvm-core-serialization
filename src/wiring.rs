@@ -66,14 +66,7 @@ impl<E: Endianness> BitReadSized<'_, E> for Wiring {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use crate::encode;
-  use bitbuffer::{BitReadSized, LittleEndian};
-
-  fn decode_sized<'a, T: BitReadSized<'a, LittleEndian>>(bytes: &[u8], size: usize) -> T {
-    let read_buffer = bitbuffer::BitReadBuffer::new_owned(bytes.to_vec(), LittleEndian);
-    let mut read_stream = bitbuffer::BitReadStream::new(read_buffer);
-    read_stream.read_sized::<T>(size).unwrap()
-  }
+  use crate::{decode_sized, encode};
 
   #[test]
   fn test_wiring_encoding_single() {
