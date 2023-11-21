@@ -15,6 +15,21 @@ impl From<hvmc::ast::Tree> for Tree {
   }
 }
 
+impl Tree {
+  pub fn gather_vars(tree: &mut hvmc::ast::Tree) -> Vec<&mut String> {
+    use hvmc::ast::Tree::*;
+    match tree {
+      Var { nam } => vec![nam],
+      Con { lft, rgt } | Tup { lft, rgt } | Dup { lft, rgt, .. } | Op2 { lft, rgt, .. } | Mat { sel: lft, ret: rgt } => {
+        let mut vars = Self::gather_vars(lft);
+        vars.append(&mut Self::gather_vars(rgt));
+        vars
+      }
+      _ => vec![],
+    }
+  }
+}
+
 // Traverse the tree pre-order and writes the tags(and data) of each node
 impl<E: Endianness> BitWrite<E> for Tree {
   fn write(&self, stream: &mut bitbuffer::BitWriteStream<E>) -> bitbuffer::Result<()> {
@@ -24,7 +39,7 @@ impl<E: Endianness> BitWrite<E> for Tree {
     stream.write(&Tag::from(node))?;
 
     match node {
-      Ctr { lft, rgt, .. } | Op2 { lft, rgt } | Mat { sel: lft, ret: rgt } => {
+      Con { lft, rgt } | Tup { lft, rgt } | Dup { lft, rgt, .. } | Op2 { lft, rgt, .. } | Mat { sel: lft, ret: rgt } => {
         stream.write(&Tree(lft.as_ref().clone()))?;
         stream.write(&Tree(rgt.as_ref().clone()))?;
       }
@@ -45,21 +60,22 @@ impl<E: Endianness> BitRead<'_, E> for Tree {
       leaf @ (ERA | NUM(_) | REF(_) | VAR) => match leaf {
         ERA => Era,
         REF(HVMRef(nam)) => Ref { nam },
-        NUM(val) => Num { val: val.into() },
+        NUM(val) => Num { loc: val.into() },
         VAR => Var { nam: "invalid".to_string() },
         _ => unreachable!(),
       },
-      branch @ (CON | DUP(_) | OP2 | MAT) => {
+      branch @ (CON | DUP(_) | OP2(_) | MAT) => {
         let lft = Box::new(stream.read::<Tree>()?.into());
         let rgt = Box::new(stream.read::<Tree>()?.into());
         match branch {
-          CON => Ctr { lab: 0, lft, rgt },
-          DUP(lab) => Ctr {
-            lab: u8::from(lab) + 1,
+          CON => Con { lft, rgt },
+          DUP(lab) if u8::from(lab) == 0 => Tup { lft, rgt },
+          DUP(lab) => Dup {
+            lab: (u8::from(lab) + 1) as u32,
             lft,
             rgt,
           },
-          OP2 => Op2 { lft, rgt },
+          OP2(opr) => Op2 { lft, rgt, opr },
           MAT => Mat { sel: lft, ret: rgt },
           _ => unreachable!(),
         }
@@ -78,7 +94,12 @@ mod tests {
   // Tree-only encoding does not support variables
   #[test]
   fn test_tree_encoding() {
-    let cases = ["([* <#123 <#321 *>>] [@a (* *)])", "((@foo *) [* #123])"];
+    let cases = [
+      "([* (#123 (#321 *))] [@a (* *)])",
+      "((@foo *) [* #123])",
+      "<+ #5 *>",
+      "<+ * *>",
+    ];
     for tree_source in cases {
       let tree: Tree = do_parse_tree(tree_source).into();
 

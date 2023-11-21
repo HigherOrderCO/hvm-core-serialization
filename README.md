@@ -19,7 +19,8 @@ So we basically encode:
 - `Tag` uses 3-bits for the variant and:
   - for `NUM`, has a `VarLenNumber`
   - for `REF`, has a `HVMRef`
-  - for `DUP`, has a `VarLenNumber` for the label
+  - for `TUP`/`DUP`, has a `VarLenNumber` for the label
+  - for `OP2`, has a fixed 4-bits for the operator
   - for the rest, has no data
 
 ## Tree

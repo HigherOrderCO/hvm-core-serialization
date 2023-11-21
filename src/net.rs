@@ -28,19 +28,7 @@ impl Net {
   }
 
   pub fn gather_vars(&mut self) -> Vec<&mut String> {
-    fn go(node: &mut hvmc::ast::Tree) -> Vec<&mut String> {
-      use hvmc::ast::Tree::*;
-      match node {
-        Var { nam } => vec![nam],
-        Era | Ref { .. } | Num { .. } => vec![],
-        Ctr { lft, rgt, .. } | Op2 { lft, rgt } | Mat { sel: lft, ret: rgt } => {
-          let mut vars = go(lft);
-          vars.append(&mut go(rgt));
-          vars
-        }
-      }
-    }
-    self.get_trees().into_iter().flat_map(go).collect::<Vec<_>>()
+    self.get_trees().into_iter().flat_map(Tree::gather_vars).collect::<Vec<_>>()
   }
 
   pub fn apply_wiring(&mut self, wiring: Wiring) {

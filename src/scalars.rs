@@ -87,7 +87,8 @@ pub enum Tag {
   REF(HVMRef),
   VAR,
   NUM(VarLenNumber),
-  OP2,
+  #[size = 4]
+  OP2(u32),
   MAT,
   CON,
   DUP(VarLenNumber),
@@ -99,12 +100,13 @@ impl From<&hvmc::ast::Tree> for Tag {
     use Tag::*;
     match *value {
       Era => ERA,
-      Ctr { lab: 0, .. } => CON,
-      Ctr { lab, .. } => DUP((lab as u32 - 1).into()),
+      Con { .. } => CON,
+      Tup { .. } => DUP(0.into()),
+      Dup { lab, .. } => DUP((lab + 1).into()),
       Var { .. } => VAR, // incorrect, but we don't know the index yet
       Ref { nam } => REF(nam.into()),
-      Num { val } => NUM(val.into()),
-      Op2 { .. } => OP2,
+      Num { loc } => NUM(loc.into()),
+      Op2 { opr, .. } => OP2(opr),
       Mat { .. } => MAT,
     }
   }
