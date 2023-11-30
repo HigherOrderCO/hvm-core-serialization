@@ -66,7 +66,7 @@ impl<E: Endianness> BitWrite<E> for Net {
     let Net(hvmc::ast::Net { root, rdex }) = self;
 
     stream.write::<Tree>(&root.clone().into())?;
-    stream.write::<VarLenNumber>(&(rdex.len() as u32).into())?;
+    stream.write::<VarLenNumber>(&(rdex.len() as u64).into())?;
     stream.write(&rdex.iter().map(|(a, b)| (a.clone().into(), b.clone().into())).collect::<Vec<(Tree, Tree)>>())?;
     stream.write(&self.get_current_wiring())?;
 
@@ -77,7 +77,7 @@ impl<E: Endianness> BitWrite<E> for Net {
 impl<E: Endianness> BitRead<'_, E> for Net {
   fn read(stream: &mut bitbuffer::BitReadStream<'_, E>) -> bitbuffer::Result<Self> {
     let root: Tree = stream.read()?;
-    let rdex_len: u32 = stream.read::<VarLenNumber>()?.into();
+    let rdex_len: u64 = stream.read::<VarLenNumber>()?.into();
     let rdex: Vec<(Tree, Tree)> = stream.read_sized(rdex_len as usize)?;
 
     let mut net: Net = hvmc::ast::Net {

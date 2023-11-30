@@ -14,7 +14,7 @@ So we basically encode:
 
 ## Scalars
 
-- `HVMRef`, uses fixed 28-bits.
+- `HVMRef`, uses fixed 60-bits.
 - `VarLenNumber`: uses [elias-gamma encoding](https://en.wikipedia.org/wiki/Elias_gamma_coding).
 - `Tag` uses 3-bits for the variant and:
   - for `NUM`, has a `VarLenNumber`

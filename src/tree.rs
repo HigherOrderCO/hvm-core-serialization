@@ -60,7 +60,7 @@ impl<E: Endianness> BitRead<'_, E> for Tree {
       leaf @ (ERA | NUM(_) | REF(_) | VAR) => match leaf {
         ERA => Era,
         REF(HVMRef(nam)) => Ref { nam },
-        NUM(val) => Num { loc: val.into() },
+        NUM(val) => Num { val: val.into() },
         VAR => Var { nam: "invalid".to_string() },
         _ => unreachable!(),
       },

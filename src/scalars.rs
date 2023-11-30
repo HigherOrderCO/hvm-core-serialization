@@ -1,15 +1,15 @@
 use bitbuffer::{BitRead, BitWrite, Endianness};
 
 #[derive(Debug, BitRead, BitWrite, PartialEq, Eq, Clone, Copy)]
-pub struct HVMRef(#[size = 28] pub u32);
+pub struct HVMRef(#[size = 60] pub u64);
 
-impl From<u32> for HVMRef {
-  fn from(n: u32) -> Self {
+impl From<u64> for HVMRef {
+  fn from(n: u64) -> Self {
     Self(n)
   }
 }
 
-impl From<HVMRef> for u32 {
+impl From<HVMRef> for u64 {
   fn from(n: HVMRef) -> Self {
     n.0
   }
@@ -17,15 +17,15 @@ impl From<HVMRef> for u32 {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 /// Uses Elias gamma encoding
-pub struct VarLenNumber(u32);
+pub struct VarLenNumber(u64);
 
-impl From<u32> for VarLenNumber {
-  fn from(n: u32) -> Self {
+impl From<u64> for VarLenNumber {
+  fn from(n: u64) -> Self {
     Self(n)
   }
 }
 
-impl From<VarLenNumber> for u32 {
+impl From<VarLenNumber> for u64 {
   fn from(n: VarLenNumber) -> Self {
     n.0
   }
@@ -102,10 +102,10 @@ impl From<&hvmc::ast::Tree> for Tag {
       Era => ERA,
       Con { .. } => CON,
       Tup { .. } => DUP(0.into()),
-      Dup { lab, .. } => DUP((lab + 1).into()),
+      Dup { lab, .. } => DUP(((lab + 1) as u64).into()),
       Var { .. } => VAR, // incorrect, but we don't know the index yet
       Ref { nam } => REF(nam.into()),
-      Num { loc } => NUM(loc.into()),
+      Num { val } => NUM(val.into()),
       Op2 { opr, .. } => OP2(opr),
       Mat { .. } => MAT,
     }
