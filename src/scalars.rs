@@ -87,8 +87,8 @@ pub enum Tag {
   REF(HVMRef),
   VAR,
   NUM(VarLenNumber),
-  #[size = 4]
-  OP2(u32),
+  #[size = 5] // 1 extra bit for signaling if it's OP1 or OP2
+  OPS(u32),
   MAT,
   CON,
   DUP(VarLenNumber),
@@ -106,7 +106,8 @@ impl From<&hvmc::ast::Tree> for Tag {
       Var { .. } => VAR, // incorrect, but we don't know the index yet
       Ref { nam } => REF(nam.into()),
       Num { val } => NUM(val.into()),
-      Op2 { opr, .. } => OP2(opr),
+      Op1 { opr, .. } => OPS(opr << 1),
+      Op2 { opr, .. } => OPS((opr << 1) | 0b1),
       Mat { .. } => MAT,
     }
   }

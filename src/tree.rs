@@ -64,7 +64,7 @@ impl<E: Endianness> BitRead<'_, E> for Tree {
         VAR => Var { nam: "invalid".to_string() },
         _ => unreachable!(),
       },
-      branch @ (CON | DUP(_) | OP2(_) | MAT) => {
+      branch @ (CON | DUP(_) | OPS(_) | MAT) => {
         let lft = Box::new(stream.read::<Tree>()?.into());
         let rgt = Box::new(stream.read::<Tree>()?.into());
         match branch {
@@ -75,7 +75,11 @@ impl<E: Endianness> BitRead<'_, E> for Tree {
             lft,
             rgt,
           },
-          OP2(opr) => Op2 { lft, rgt, opr },
+          OPS(opr) if opr & 0b1 == 1 => Op2 { lft, rgt, opr: opr >> 1 },
+          OPS(opr) => match lft.as_ref() {
+            Num { val } => Op1 { lft: *val, rgt, opr: opr >> 1 },
+            _ => unreachable!(),
+          }
           MAT => Mat { sel: lft, ret: rgt },
           _ => unreachable!(),
         }
