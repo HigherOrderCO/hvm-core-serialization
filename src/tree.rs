@@ -1,5 +1,7 @@
+use crate::{encode, decode};
 use super::scalars::{HVMRef, Tag};
 use bitbuffer::{BitRead, BitWrite, Endianness};
+use serde::{Serialize, Deserialize};
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Tree(hvmc::ast::Tree);
@@ -86,6 +88,19 @@ impl<E: Endianness> BitRead<'_, E> for Tree {
       }
     };
     Ok(Self(tree))
+  }
+}
+
+impl Serialize for Tree {
+  fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.serialize_bytes(&encode(self))
+  }
+}
+
+impl<'de> Deserialize<'de> for Tree {
+  fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+    let bytes: Vec<u8> = serde::Deserialize::deserialize(deserializer)?;
+    Ok(decode(&bytes))
   }
 }
 

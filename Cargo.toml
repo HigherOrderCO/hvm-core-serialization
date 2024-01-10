@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 bitbuffer = "0.10.9"
 hvm-core = "0.2.12"
+serde = { version = "1.0.195", features = ["serde_derive"] }

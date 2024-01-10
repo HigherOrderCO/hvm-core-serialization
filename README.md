@@ -20,7 +20,7 @@ So we basically encode:
   - for `NUM`, has a `VarLenNumber`
   - for `REF`, has a `HVMRef`
   - for `TUP`/`DUP`, has a `VarLenNumber` for the label
-  - for `OP2`, has a fixed 4-bits for the operator
+  - for `OP2` and `OP1`, has a fixed 1-bit to differentiate between `OP1` and `OP2`, and 4-bits for the operator.
   - for the rest, has no data
 
 ## Tree
@@ -33,7 +33,7 @@ So for example, the tree `((@foo *) [* #123])`:
 - By doing a pre-order traversal, we get the structure:
   1. `((@foo *) [* #123])`, has children, visit left, write `CON` (3-bits)
   2. `(@foo *)`, has children, visit left, write `CON` (3-bits)
-  3. `@foo`, has no children, write `REF(@foo)`, backtrack to sibling (3-bits + 28-bits)
+  3. `@foo`, has no children, write `REF(@foo)`, backtrack to sibling (3-bits + 60-bits)
   4. `*`, has no children, write `ERA`, backtrack to sibling (3-bits)
   5. `[* #123]`, has children, visit left, write `DUP(0)` (3-bits + 1-bit)
   6. `*`, has no children, write `ERA`, backtrack to sibling (3-bits)

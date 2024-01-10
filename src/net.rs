@@ -1,8 +1,8 @@
-use crate::scalars::VarLenNumber;
-
+use crate::{scalars::VarLenNumber, encode, decode};
 use super::tree::Tree;
 use super::wiring::Wiring;
 use bitbuffer::{BitRead, BitWrite, Endianness};
+use serde::{Serialize, Deserialize};
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Net(hvmc::ast::Net);
@@ -91,6 +91,19 @@ impl<E: Endianness> BitRead<'_, E> for Net {
     net.apply_wiring(wiring);
 
     Ok(net)
+  }
+}
+
+impl Serialize for Net {
+  fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.serialize_bytes(&encode(self))
+  }
+}
+
+impl<'de> Deserialize<'de> for Net {
+  fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+    let bytes: Vec<u8> = Deserialize::deserialize(deserializer)?;
+    Ok(decode(&bytes))
   }
 }
 

@@ -8,6 +8,7 @@ pub mod net;
 pub mod scalars;
 pub mod tree;
 pub mod wiring;
+pub mod book;
 
 /// Encodes a tree/net/wiring into a byte vector using little endian
 pub fn encode(value: &impl BitWrite<LittleEndian>) -> Vec<u8> {
