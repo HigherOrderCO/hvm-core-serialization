@@ -16,3 +16,15 @@ impl From<hvmc::ast::Book> for Book {
     Self(value.into_iter().map(|(k, v)| (k, v.into())).collect())
   }
 }
+
+impl From<Book> for hvmc::run::Book {
+  fn from(value: Book) -> Self {
+    hvmc::ast::book_to_runtime(&value.into())
+  }
+}
+
+impl From<hvmc::run::Book> for Book {
+  fn from(value: hvmc::run::Book) -> Self {
+    hvmc::ast::book_from_runtime(&value).into()
+  }
+}
