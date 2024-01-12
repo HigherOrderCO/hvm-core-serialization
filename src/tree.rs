@@ -1,7 +1,8 @@
-use crate::{encode, decode};
 use super::scalars::{HVMRef, Tag};
+use crate::scalars::VarLenNumber;
+use crate::{decode, encode};
 use bitbuffer::{BitRead, BitWrite, Endianness};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Tree(hvmc::ast::Tree);
@@ -27,6 +28,7 @@ impl Tree {
         vars.append(&mut Self::gather_vars(rgt));
         vars
       }
+      Op1 { rgt, .. } => Self::gather_vars(rgt),
       _ => vec![],
     }
   }
@@ -43,6 +45,10 @@ impl<E: Endianness> BitWrite<E> for Tree {
     match node {
       Con { lft, rgt } | Tup { lft, rgt } | Dup { lft, rgt, .. } | Op2 { lft, rgt, .. } | Mat { sel: lft, ret: rgt } => {
         stream.write(&Tree(lft.as_ref().clone()))?;
+        stream.write(&Tree(rgt.as_ref().clone()))?;
+      }
+      Op1 { lft, rgt, .. } => {
+        stream.write(&VarLenNumber::from(*lft))?;
         stream.write(&Tree(rgt.as_ref().clone()))?;
       }
       _ => {}
@@ -66,6 +72,11 @@ impl<E: Endianness> BitRead<'_, E> for Tree {
         VAR => Var { nam: "invalid".to_string() },
         _ => unreachable!(),
       },
+      OPS(opr) if (opr >> 4) == 1 => {
+        let lft = stream.read::<VarLenNumber>()?.into();
+        let rgt = Box::new(stream.read::<Tree>()?.into());
+        Op1 { lft, rgt, opr: opr & 0b01111 }
+      }
       branch @ (CON | DUP(_) | OPS(_) | MAT) => {
         let lft = Box::new(stream.read::<Tree>()?.into());
         let rgt = Box::new(stream.read::<Tree>()?.into());
@@ -77,11 +88,7 @@ impl<E: Endianness> BitRead<'_, E> for Tree {
             lft,
             rgt,
           },
-          OPS(opr) if opr & 0b1 == 1 => Op2 { lft, rgt, opr: opr >> 1 },
-          OPS(opr) => match lft.as_ref() {
-            Num { val } => Op1 { lft: *val, rgt, opr: opr >> 1 },
-            _ => unreachable!(),
-          }
+          OPS(opr) => Op2 { lft, rgt, opr },
           MAT => Mat { sel: lft, ret: rgt },
           _ => unreachable!(),
         }
@@ -113,12 +120,7 @@ mod tests {
   // Tree-only encoding does not support variables
   #[test]
   fn test_tree_encoding() {
-    let cases = [
-      "([* (#123 (#321 *))] [@a (* *)])",
-      "((@foo *) [* #123])",
-      "<+ #5 *>",
-      "<+ * *>",
-    ];
+    let cases = ["([* (#123 (#321 *))] [@a (* *)])", "((@foo *) [* #123])", "<+ #5 *>", "<+ * *>", "<1+ #5>"];
     for tree_source in cases {
       let tree: Tree = do_parse_tree(tree_source).into();
 

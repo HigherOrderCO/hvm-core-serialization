@@ -106,8 +106,8 @@ impl From<&hvmc::ast::Tree> for Tag {
       Var { .. } => VAR, // incorrect, but we don't know the index yet
       Ref { nam } => REF(nam.into()),
       Num { val } => NUM(val.into()),
-      Op1 { opr, .. } => OPS(opr << 1),
-      Op2 { opr, .. } => OPS((opr << 1) | 0b1),
+      Op1 { opr, .. } => OPS(opr | 0b10000), // set 5th bit to 1
+      Op2 { opr, .. } => OPS(opr),
       Mat { .. } => MAT,
     }
   }
