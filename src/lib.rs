@@ -1,14 +1,13 @@
-#![feature(slice_group_by)]
 #![feature(is_sorted)]
 #![doc = include_str!("../README.md")]
 pub use bitbuffer::{BigEndian, LittleEndian};
 use bitbuffer::{BitRead, BitReadSized, BitWrite, Endianness};
 
+pub mod book;
 pub mod net;
 pub mod scalars;
 pub mod tree;
 pub mod wiring;
-pub mod book;
 
 /// Encodes a tree/net/wiring into a byte vector using little endian
 pub fn encode(value: &impl BitWrite<LittleEndian>) -> Vec<u8> {
@@ -56,13 +55,14 @@ where
 
 #[cfg(test)]
 mod tests {
+  use std::str::FromStr;
+
   use super::net::Net;
   use super::*;
-  use hvmc::ast::do_parse_net;
 
   #[test]
   fn test_big_endian() {
-    let net: Net = do_parse_net("a & (a *) ~ (b b)").into();
+    let net: Net = hvmc::ast::Net::from_str("a & (a *) ~ (b b)").unwrap().into();
 
     let bytes = encode_endian(&net, BigEndian);
     let decoded_net: Net = decode_endian(&bytes, BigEndian);

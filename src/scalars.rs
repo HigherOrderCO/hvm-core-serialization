@@ -1,15 +1,15 @@
 use bitbuffer::{BitRead, BitWrite, Endianness};
 
-#[derive(Debug, BitRead, BitWrite, PartialEq, Eq, Clone, Copy)]
-pub struct HVMRef(#[size = 60] pub u64);
+#[derive(Debug, BitRead, BitWrite, PartialEq, Eq, Clone)]
+pub struct HVMRef(pub String);
 
-impl From<u64> for HVMRef {
-  fn from(n: u64) -> Self {
+impl From<String> for HVMRef {
+  fn from(n: String) -> Self {
     Self(n)
   }
 }
 
-impl From<HVMRef> for u64 {
+impl From<HVMRef> for String {
   fn from(n: HVMRef) -> Self {
     n.0
   }
@@ -25,9 +25,20 @@ impl From<u64> for VarLenNumber {
   }
 }
 
+impl From<u16> for VarLenNumber {
+  fn from(n: u16) -> Self {
+    Self(n as u64)
+  }
+}
+
 impl From<VarLenNumber> for u64 {
   fn from(n: VarLenNumber) -> Self {
     n.0
+  }
+}
+impl From<VarLenNumber> for u16 {
+  fn from(n: VarLenNumber) -> Self {
+    n.0 as u16
   }
 }
 
@@ -79,35 +90,33 @@ impl<E: Endianness> BitRead<'_, E> for VarLenNumber {
   }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, BitWrite, BitRead)]
+#[derive(Clone, PartialEq, Eq, Debug, BitWrite, BitRead)]
 #[discriminant_bits = 3]
 #[allow(clippy::upper_case_acronyms)]
 pub enum Tag {
   ERA,
+  // FIXME: use a table for storing the ref's strings
   REF(HVMRef),
   VAR,
   NUM(VarLenNumber),
   #[size = 5] // 1 extra bit for signaling if it's OP1 or OP2
   OPS(u32),
   MAT,
-  CON,
-  DUP(VarLenNumber),
+  CTR(VarLenNumber),
 }
 
 impl From<&hvmc::ast::Tree> for Tag {
   fn from(value: &hvmc::ast::Tree) -> Self {
     use hvmc::ast::Tree::*;
     use Tag::*;
-    match *value {
+    match value {
       Era => ERA,
-      Con { .. } => CON,
-      Tup { .. } => DUP(0.into()),
-      Dup { lab, .. } => DUP(((lab + 1) as u64).into()),
+      &Ctr { lab, .. } => CTR(lab.into()),
       Var { .. } => VAR, // incorrect, but we don't know the index yet
-      Ref { nam } => REF(nam.into()),
-      Num { val } => NUM(val.into()),
-      Op1 { opr, .. } => OPS(opr | 0b10000), // set 5th bit to 1
-      Op2 { opr, .. } => OPS(opr),
+      Ref { nam } => REF(nam.clone().into()),
+      &Num { val } => NUM(val.into()),
+      &Op1 { opr, .. } => OPS(u16::from(opr) as u32 | 0b10000), // set 5th bit to 1
+      &Op2 { opr, .. } => OPS(u16::from(opr) as u32),
       Mat { .. } => MAT,
     }
   }

@@ -2,6 +2,7 @@ use super::scalars::{HVMRef, Tag};
 use crate::scalars::VarLenNumber;
 use crate::{decode, encode};
 use bitbuffer::{BitRead, BitWrite, Endianness};
+use hvmc::ops::Op;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -23,7 +24,7 @@ impl Tree {
     use hvmc::ast::Tree::*;
     match tree {
       Var { nam } => vec![nam],
-      Con { lft, rgt } | Tup { lft, rgt } | Dup { lft, rgt, .. } | Op2 { lft, rgt, .. } | Mat { sel: lft, ret: rgt } => {
+      Ctr { lft, rgt, .. } | Op2 { lft, rgt, .. } | Mat { sel: lft, ret: rgt } => {
         let mut vars = Self::gather_vars(lft);
         vars.append(&mut Self::gather_vars(rgt));
         vars
@@ -43,7 +44,7 @@ impl<E: Endianness> BitWrite<E> for Tree {
     stream.write(&Tag::from(node))?;
 
     match node {
-      Con { lft, rgt } | Tup { lft, rgt } | Dup { lft, rgt, .. } | Op2 { lft, rgt, .. } | Mat { sel: lft, ret: rgt } => {
+      Ctr { lft, rgt, .. } | Op2 { lft, rgt, .. } | Mat { sel: lft, ret: rgt } => {
         stream.write(&Tree(lft.as_ref().clone()))?;
         stream.write(&Tree(rgt.as_ref().clone()))?;
       }
@@ -75,20 +76,22 @@ impl<E: Endianness> BitRead<'_, E> for Tree {
       OPS(opr) if (opr >> 4) == 1 => {
         let lft = stream.read::<VarLenNumber>()?.into();
         let rgt = Box::new(stream.read::<Tree>()?.into());
-        Op1 { lft, rgt, opr: opr & 0b01111 }
+        Op1 {
+          lft,
+          rgt,
+          opr: Op::try_from(u16::try_from(opr & 0b01111).unwrap()).unwrap(),
+        }
       }
-      branch @ (CON | DUP(_) | OPS(_) | MAT) => {
+      branch @ (CTR(_) | OPS(_) | MAT) => {
         let lft = Box::new(stream.read::<Tree>()?.into());
         let rgt = Box::new(stream.read::<Tree>()?.into());
         match branch {
-          CON => Con { lft, rgt },
-          DUP(lab) if u8::from(lab) == 0 => Tup { lft, rgt },
-          DUP(lab) => Dup {
-            lab: (u8::from(lab) + 1) as u32,
+          CTR(lab) => Ctr { lft, rgt, lab: lab.into() },
+          OPS(opr) => Op2 {
             lft,
             rgt,
+            opr: u16::try_from(opr).unwrap().try_into().unwrap(),
           },
-          OPS(opr) => Op2 { lft, rgt, opr },
           MAT => Mat { sel: lft, ret: rgt },
           _ => unreachable!(),
         }
@@ -113,16 +116,15 @@ impl<'de> Deserialize<'de> for Tree {
 
 #[cfg(test)]
 mod tests {
-  use super::super::{decode, encode};
   use super::*;
-  use hvmc::ast::do_parse_tree;
+  use std::str::FromStr;
 
   // Tree-only encoding does not support variables
   #[test]
   fn test_tree_encoding() {
     let cases = ["([* (#123 (#321 *))] [@a (* *)])", "((@foo *) [* #123])", "<+ #5 *>", "<+ * *>", "<1+ #5>"];
     for tree_source in cases {
-      let tree: Tree = do_parse_tree(tree_source).into();
+      let tree: Tree = hvmc::ast::Tree::from_str(tree_source).unwrap().into();
 
       let bytes = encode(&tree.clone());
       let decoded_tree: Tree = decode(&bytes);

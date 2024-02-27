@@ -1,8 +1,9 @@
-use crate::{scalars::VarLenNumber, encode, decode};
 use super::tree::Tree;
 use super::wiring::Wiring;
+use crate::scalars::VarLenNumber;
+use crate::{decode, encode};
 use bitbuffer::{BitRead, BitWrite, Endianness};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Net(hvmc::ast::Net);
@@ -44,7 +45,7 @@ impl Net {
     vars_with_index.sort_by(|(_, a_name), (_, b_name)| a_name.cmp(b_name));
 
     let connections = vars_with_index
-      .group_by(|(_, a_name), (_, b_name)| a_name == b_name)
+      .chunk_by(|(_, a_name), (_, b_name)| a_name == b_name)
       .map(|v| {
         let [(a_idx, _), (b_idx, _)] = v else { unreachable!() };
         (*a_idx, *b_idx)
@@ -109,9 +110,8 @@ impl<'de> Deserialize<'de> for Net {
 
 #[cfg(test)]
 mod tests {
-  use super::super::{decode, encode};
   use super::*;
-  use hvmc::ast::do_parse_net;
+  use std::str::FromStr;
 
   #[test]
   fn test_net_encoding() {
@@ -124,7 +124,7 @@ mod tests {
       "((a [a b]) b)", // Y-Combinator
     ];
     for net in cases {
-      let net: Net = do_parse_net(net).into();
+      let net: Net = hvmc::ast::Net::from_str(net).unwrap().into();
       let net_string = format!("{:?}", net);
 
       let bytes = encode(&net);
