@@ -1,5 +1,4 @@
 use bitbuffer::{BitRead, BitWrite, Endianness};
-use serde::de::IntoDeserializer;
 
 #[derive(Debug, BitRead, BitWrite, PartialEq, Eq, Clone)]
 pub struct HVMRef(pub String);
@@ -34,8 +33,7 @@ impl From<i64> for VarLenNumber {
 
 impl From<f32> for VarLenNumber {
   fn from(n: f32) -> Self {
-    // TODO: completely wrong fix me
-    Self(n as u64)
+    Self(n.to_bits() as u64)
   }
 }
 
@@ -59,8 +57,7 @@ impl From<VarLenNumber> for i64 {
 
 impl From<VarLenNumber> for f32 {
   fn from(n: VarLenNumber) -> Self {
-    // TODO: completely wrong fix me
-    n.0 as f32
+    f32::from_bits(n.0 as u32)
   }
 }
 
@@ -122,15 +119,17 @@ impl<E: Endianness> BitRead<'_, E> for VarLenNumber {
 #[discriminant_bits = 3]
 #[allow(clippy::upper_case_acronyms)]
 pub enum Tag {
-  ERA,
   // FIXME: use a table for storing the ref's strings
   REF(HVMRef),
   VAR,
   NUM((bool, VarLenNumber)),
-  #[size = 5] // 1 extra bit for signaling if it's OP1 or OP2
-  OPS(u32),
+  OPS(u16),
   MAT,
-  CTR((VarLenNumber, VarLenNumber)),
+  /// Has the label
+  StandardCtr(VarLenNumber),
+  /// Has the number of ports and the label
+  /// 0 ports is a ERA node
+  DynamicCtr((VarLenNumber, VarLenNumber)),
 }
 
 impl From<&hvmc::ast::Tree> for Tag {
@@ -138,8 +137,9 @@ impl From<&hvmc::ast::Tree> for Tag {
     use hvmc::ast::Tree::*;
     use Tag::*;
     match value {
-      Era => ERA,
-      &Ctr { lab, ref ports } => CTR(((ports.len() as u64).into(), lab.into())),
+      Era => DynamicCtr((0u64.into(), 0u64.into())),
+      &Ctr { lab, ref ports } if ports.len() == 2 => StandardCtr(lab.into()),
+      &Ctr { lab, ref ports } => DynamicCtr(((ports.len() as u64).into(), lab.into())),
       Var { .. } => VAR, // incorrect, but we don't know the index yet
       Ref { nam } => REF(nam.clone().into()),
       // &Num { val } => NUM(val.into()),
@@ -147,8 +147,8 @@ impl From<&hvmc::ast::Tree> for Tag {
       // &Op2 { opr, .. } => OPS(u16::from(opr) as u32),
       Mat { .. } => MAT,
       &Int { val } => NUM((false, val.into())),
-      F32 { val } => NUM((true, todo!())),
-      Op { op, rhs, out } => todo!(),
+      F32 { val } => NUM((true, val.into_inner().into())),
+      Op { op, .. } => OPS((*op).into()),
       Adt {
         lab,
         variant_index,

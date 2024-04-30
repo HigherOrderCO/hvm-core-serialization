@@ -62,12 +62,13 @@ impl<E: Endianness> BitWrite<E> for Tree {
     stream.write(&Tag::from(node))?;
 
     match node {
-      Ctr { ports, .. } => {
+      Ctr { ref ports, .. } if ports.len() == 2 => {
+        stream.write(&Tree(ports[0].clone()))?;
+        stream.write(&Tree(ports[1].clone()))?;
+      }
+      Ctr { ref ports, .. } => {
         stream.write::<VarLenNumber>(&(ports.len() as u64).into())?;
         stream.write(&ports.into_iter().map(|p| Tree(p.clone())).collect::<Vec<_>>())?;
-        // for port in ports {
-        //   stream.write(&Tree(port.clone()))?;
-        // }
       }
       Mat { zero, succ, out } => {
         stream.write(&Tree(zero.as_ref().clone()))?;
@@ -75,9 +76,6 @@ impl<E: Endianness> BitWrite<E> for Tree {
         stream.write(&Tree(out.as_ref().clone()))?;
       }
       Op { rhs, out, .. } => {
-        // stream.write(&VarLenNumber::from(*lft))?;
-        // stream.write(&Tree(rgt.as_ref().clone()))?;
-
         stream.write(&Tree(rhs.as_ref().clone()))?;
         stream.write(&Tree(out.as_ref().clone()))?;
       }
@@ -96,16 +94,15 @@ impl<E: Endianness> BitRead<'_, E> for Tree {
 
     let tag: Tag = stream.read()?;
     let tree = match tag {
-      leaf @ (ERA | NUM(_) | REF(_) | VAR) => match leaf {
-        ERA => Era,
+      leaf @ (NUM(_) | REF(_) | VAR) => match leaf {
         REF(HVMRef(nam)) => Ref { nam },
         NUM((false, val)) => Int { val: val.into() },
         NUM((true, val)) => F32 { val: f32::from(val).into() },
         VAR => Var { nam: "invalid".to_string() },
         _ => unreachable!(),
       },
+      DynamicCtr((len, _)) if u64::from(len) == 0 => Era,
       OPS(opr) => {
-        // let lft = stream.read::<VarLenNumber>()?.into();
         let rhs = Box::new(stream.read::<Tree>()?.into());
         let out = Box::new(stream.read::<Tree>()?.into());
         Op {
@@ -120,7 +117,15 @@ impl<E: Endianness> BitRead<'_, E> for Tree {
         let out = Box::new(stream.read::<Tree>()?.into());
         Mat { zero, succ, out }
       }
-      CTR((len, lab)) => {
+      StandardCtr(lab) => {
+        let lft = Box::new(stream.read::<Tree>()?.into());
+        let rgt = Box::new(stream.read::<Tree>()?.into());
+        Ctr {
+          lab: lab.into(),
+          ports: vec![*lft, *rgt],
+        }
+      }
+      DynamicCtr((len, lab)) => {
         let ports: Vec<Tree> = stream.read_sized(u64::from(len) as usize)?;
         Ctr {
           lab: lab.into(),
@@ -153,7 +158,14 @@ mod tests {
   // Tree-only encoding does not support variables
   #[test]
   fn test_tree_encoding() {
-    let cases = ["([* (#123 (#321 *))] [@a (* *)])", "((@foo *) [* #123])", "<+ #5 *>", "<+ * *>", "<1+ #5>"];
+    let cases = [
+      "([* (#123 (#321 *))] [@a (* *)])",
+      "((@foo *) [* #123])",
+      "<+ #5 *>",
+      "<+ * *>",
+      "<- #5 #3>",
+      "<+ #5.5 *>",
+    ];
     for tree_source in cases {
       let tree: Tree = hvmc::ast::Tree::from_str(tree_source).unwrap().into();
 
