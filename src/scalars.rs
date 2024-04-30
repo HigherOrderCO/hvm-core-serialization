@@ -1,4 +1,5 @@
 use bitbuffer::{BitRead, BitWrite, Endianness};
+use serde::de::IntoDeserializer;
 
 #[derive(Debug, BitRead, BitWrite, PartialEq, Eq, Clone)]
 pub struct HVMRef(pub String);
@@ -25,6 +26,19 @@ impl From<u64> for VarLenNumber {
   }
 }
 
+impl From<i64> for VarLenNumber {
+  fn from(n: i64) -> Self {
+    Self(n as u64)
+  }
+}
+
+impl From<f32> for VarLenNumber {
+  fn from(n: f32) -> Self {
+    // TODO: completely wrong fix me
+    Self(n as u64)
+  }
+}
+
 impl From<u16> for VarLenNumber {
   fn from(n: u16) -> Self {
     Self(n as u64)
@@ -36,6 +50,20 @@ impl From<VarLenNumber> for u64 {
     n.0
   }
 }
+
+impl From<VarLenNumber> for i64 {
+  fn from(n: VarLenNumber) -> Self {
+    n.0 as i64
+  }
+}
+
+impl From<VarLenNumber> for f32 {
+  fn from(n: VarLenNumber) -> Self {
+    // TODO: completely wrong fix me
+    n.0 as f32
+  }
+}
+
 impl From<VarLenNumber> for u16 {
   fn from(n: VarLenNumber) -> Self {
     n.0 as u16
@@ -98,11 +126,11 @@ pub enum Tag {
   // FIXME: use a table for storing the ref's strings
   REF(HVMRef),
   VAR,
-  NUM(VarLenNumber),
+  NUM((bool, VarLenNumber)),
   #[size = 5] // 1 extra bit for signaling if it's OP1 or OP2
   OPS(u32),
   MAT,
-  CTR(VarLenNumber),
+  CTR((VarLenNumber, VarLenNumber)),
 }
 
 impl From<&hvmc::ast::Tree> for Tag {
@@ -111,13 +139,22 @@ impl From<&hvmc::ast::Tree> for Tag {
     use Tag::*;
     match value {
       Era => ERA,
-      &Ctr { lab, .. } => CTR(lab.into()),
+      &Ctr { lab, ref ports } => CTR(((ports.len() as u64).into(), lab.into())),
       Var { .. } => VAR, // incorrect, but we don't know the index yet
       Ref { nam } => REF(nam.clone().into()),
-      &Num { val } => NUM(val.into()),
-      &Op1 { opr, .. } => OPS(u16::from(opr) as u32 | 0b10000), // set 5th bit to 1
-      &Op2 { opr, .. } => OPS(u16::from(opr) as u32),
+      // &Num { val } => NUM(val.into()),
+      // &Op1 { opr, .. } => OPS(u16::from(opr) as u32 | 0b10000), // set 5th bit to 1
+      // &Op2 { opr, .. } => OPS(u16::from(opr) as u32),
       Mat { .. } => MAT,
+      &Int { val } => NUM((false, val.into())),
+      F32 { val } => NUM((true, todo!())),
+      Op { op, rhs, out } => todo!(),
+      Adt {
+        lab,
+        variant_index,
+        variant_count,
+        fields,
+      } => todo!(),
     }
   }
 }

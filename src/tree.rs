@@ -2,7 +2,6 @@ use super::scalars::{HVMRef, Tag};
 use crate::scalars::VarLenNumber;
 use crate::{decode, encode};
 use bitbuffer::{BitRead, BitWrite, Endianness};
-use hvmc::ops::Op;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -24,12 +23,31 @@ impl Tree {
     use hvmc::ast::Tree::*;
     match tree {
       Var { nam } => vec![nam],
-      Ctr { lft, rgt, .. } | Op2 { lft, rgt, .. } | Mat { sel: lft, ret: rgt } => {
-        let mut vars = Self::gather_vars(lft);
-        vars.append(&mut Self::gather_vars(rgt));
+      Ctr { ports, .. } => ports
+        .iter_mut()
+        .map(Self::gather_vars)
+        .reduce(|mut acc, mut e| {
+          acc.append(&mut e);
+          acc
+        })
+        .unwrap_or_default(),
+      Op { op, rhs, out } => {
+        let mut vars = Self::gather_vars(rhs);
+        vars.append(&mut Self::gather_vars(out));
         vars
       }
-      Op1 { rgt, .. } => Self::gather_vars(rgt),
+      Mat { zero, succ, out } => {
+        let mut vars = Self::gather_vars(zero);
+        vars.append(&mut Self::gather_vars(succ));
+        vars.append(&mut Self::gather_vars(out));
+        vars
+      }
+      Adt {
+        lab,
+        variant_index,
+        variant_count,
+        fields,
+      } => todo!(),
       _ => vec![],
     }
   }
@@ -44,13 +62,24 @@ impl<E: Endianness> BitWrite<E> for Tree {
     stream.write(&Tag::from(node))?;
 
     match node {
-      Ctr { lft, rgt, .. } | Op2 { lft, rgt, .. } | Mat { sel: lft, ret: rgt } => {
-        stream.write(&Tree(lft.as_ref().clone()))?;
-        stream.write(&Tree(rgt.as_ref().clone()))?;
+      Ctr { ports, .. } => {
+        stream.write::<VarLenNumber>(&(ports.len() as u64).into())?;
+        stream.write(&ports.into_iter().map(|p| Tree(p.clone())).collect::<Vec<_>>())?;
+        // for port in ports {
+        //   stream.write(&Tree(port.clone()))?;
+        // }
       }
-      Op1 { lft, rgt, .. } => {
-        stream.write(&VarLenNumber::from(*lft))?;
-        stream.write(&Tree(rgt.as_ref().clone()))?;
+      Mat { zero, succ, out } => {
+        stream.write(&Tree(zero.as_ref().clone()))?;
+        stream.write(&Tree(succ.as_ref().clone()))?;
+        stream.write(&Tree(out.as_ref().clone()))?;
+      }
+      Op { rhs, out, .. } => {
+        // stream.write(&VarLenNumber::from(*lft))?;
+        // stream.write(&Tree(rgt.as_ref().clone()))?;
+
+        stream.write(&Tree(rhs.as_ref().clone()))?;
+        stream.write(&Tree(out.as_ref().clone()))?;
       }
       _ => {}
     }
@@ -62,6 +91,7 @@ impl<E: Endianness> BitWrite<E> for Tree {
 impl<E: Endianness> BitRead<'_, E> for Tree {
   fn read(stream: &mut bitbuffer::BitReadStream<'_, E>) -> bitbuffer::Result<Self> {
     use hvmc::ast::Tree::*;
+    use hvmc::ops::TypedOp;
     use Tag::*;
 
     let tag: Tag = stream.read()?;
@@ -69,31 +99,32 @@ impl<E: Endianness> BitRead<'_, E> for Tree {
       leaf @ (ERA | NUM(_) | REF(_) | VAR) => match leaf {
         ERA => Era,
         REF(HVMRef(nam)) => Ref { nam },
-        NUM(val) => Num { val: val.into() },
+        NUM((false, val)) => Int { val: val.into() },
+        NUM((true, val)) => F32 { val: f32::from(val).into() },
         VAR => Var { nam: "invalid".to_string() },
         _ => unreachable!(),
       },
-      OPS(opr) if (opr >> 4) == 1 => {
-        let lft = stream.read::<VarLenNumber>()?.into();
-        let rgt = Box::new(stream.read::<Tree>()?.into());
-        Op1 {
-          lft,
-          rgt,
-          opr: Op::try_from(u16::try_from(opr & 0b01111).unwrap()).unwrap(),
+      OPS(opr) => {
+        // let lft = stream.read::<VarLenNumber>()?.into();
+        let rhs = Box::new(stream.read::<Tree>()?.into());
+        let out = Box::new(stream.read::<Tree>()?.into());
+        Op {
+          rhs,
+          out,
+          op: TypedOp::try_from(u16::try_from(opr).unwrap()).unwrap(),
         }
       }
-      branch @ (CTR(_) | OPS(_) | MAT) => {
-        let lft = Box::new(stream.read::<Tree>()?.into());
-        let rgt = Box::new(stream.read::<Tree>()?.into());
-        match branch {
-          CTR(lab) => Ctr { lft, rgt, lab: lab.into() },
-          OPS(opr) => Op2 {
-            lft,
-            rgt,
-            opr: u16::try_from(opr).unwrap().try_into().unwrap(),
-          },
-          MAT => Mat { sel: lft, ret: rgt },
-          _ => unreachable!(),
+      MAT => {
+        let zero = Box::new(stream.read::<Tree>()?.into());
+        let succ = Box::new(stream.read::<Tree>()?.into());
+        let out = Box::new(stream.read::<Tree>()?.into());
+        Mat { zero, succ, out }
+      }
+      CTR((len, lab)) => {
+        let ports: Vec<Tree> = stream.read_sized(u64::from(len) as usize)?;
+        Ctr {
+          lab: lab.into(),
+          ports: ports.into_iter().map(|p| p.0).collect(),
         }
       }
     };

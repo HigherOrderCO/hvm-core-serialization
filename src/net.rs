@@ -22,9 +22,9 @@ impl From<hvmc::ast::Net> for Net {
 
 impl Net {
   fn get_trees(&mut self) -> Vec<&mut hvmc::ast::Tree> {
-    let Net(hvmc::ast::Net { root, rdex }) = self;
+    let Net(hvmc::ast::Net { root, redexes }) = self;
     let mut trees = vec![root];
-    trees.append(&mut rdex.iter_mut().flat_map(|(a, b)| [a, b]).collect::<Vec<_>>());
+    trees.append(&mut redexes.iter_mut().flat_map(|(a, b)| [a, b]).collect::<Vec<_>>());
     trees
   }
 
@@ -64,11 +64,11 @@ impl Net {
 
 impl<E: Endianness> BitWrite<E> for Net {
   fn write(&self, stream: &mut bitbuffer::BitWriteStream<E>) -> bitbuffer::Result<()> {
-    let Net(hvmc::ast::Net { root, rdex }) = self;
+    let Net(hvmc::ast::Net { root, redexes }) = self;
 
     stream.write::<Tree>(&root.clone().into())?;
-    stream.write::<VarLenNumber>(&(rdex.len() as u64).into())?;
-    stream.write(&rdex.iter().map(|(a, b)| (a.clone().into(), b.clone().into())).collect::<Vec<(Tree, Tree)>>())?;
+    stream.write::<VarLenNumber>(&(redexes.len() as u64).into())?;
+    stream.write(&redexes.iter().map(|(a, b)| (a.clone().into(), b.clone().into())).collect::<Vec<(Tree, Tree)>>())?;
     stream.write(&self.get_current_wiring())?;
 
     Ok(())
@@ -78,12 +78,12 @@ impl<E: Endianness> BitWrite<E> for Net {
 impl<E: Endianness> BitRead<'_, E> for Net {
   fn read(stream: &mut bitbuffer::BitReadStream<'_, E>) -> bitbuffer::Result<Self> {
     let root: Tree = stream.read()?;
-    let rdex_len: u64 = stream.read::<VarLenNumber>()?.into();
-    let rdex: Vec<(Tree, Tree)> = stream.read_sized(rdex_len as usize)?;
+    let redexes_len: u64 = stream.read::<VarLenNumber>()?.into();
+    let redexes: Vec<(Tree, Tree)> = stream.read_sized(redexes_len as usize)?;
 
     let mut net: Net = hvmc::ast::Net {
       root: root.into(),
-      rdex: rdex.into_iter().map(|(a, b)| (a.into(), b.into())).collect::<Vec<_>>(),
+      redexes: redexes.into_iter().map(|(a, b)| (a.into(), b.into())).collect::<Vec<_>>(),
     }
     .into();
 
