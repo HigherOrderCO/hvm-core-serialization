@@ -31,7 +31,7 @@ impl Tree {
           acc
         })
         .unwrap_or_default(),
-      Op { op, rhs, out } => {
+      Op { fst: rhs, snd: out, .. } => {
         let mut vars = Self::gather_vars(rhs);
         vars.append(&mut Self::gather_vars(out));
         vars
@@ -42,12 +42,6 @@ impl Tree {
         vars.append(&mut Self::gather_vars(out));
         vars
       }
-      Adt {
-        lab,
-        variant_index,
-        variant_count,
-        fields,
-      } => todo!(),
       _ => vec![],
     }
   }
@@ -75,7 +69,7 @@ impl<E: Endianness> BitWrite<E> for Tree {
         stream.write(&Tree(succ.as_ref().clone()))?;
         stream.write(&Tree(out.as_ref().clone()))?;
       }
-      Op { rhs, out, .. } => {
+      Op { fst: rhs, snd: out, .. } => {
         stream.write(&Tree(rhs.as_ref().clone()))?;
         stream.write(&Tree(out.as_ref().clone()))?;
       }
@@ -89,27 +83,21 @@ impl<E: Endianness> BitWrite<E> for Tree {
 impl<E: Endianness> BitRead<'_, E> for Tree {
   fn read(stream: &mut bitbuffer::BitReadStream<'_, E>) -> bitbuffer::Result<Self> {
     use hvmc::ast::Tree::*;
-    use hvmc::ops::TypedOp;
     use Tag::*;
 
     let tag: Tag = stream.read()?;
     let tree = match tag {
       leaf @ (NUM(_) | REF(_) | VAR) => match leaf {
         REF(HVMRef(nam)) => Ref { nam },
-        NUM((false, val)) => Int { val: val.into() },
-        NUM((true, val)) => F32 { val: f32::from(val).into() },
+        NUM(val) => Num { val: val.into() },
         VAR => Var { nam: "invalid".to_string() },
         _ => unreachable!(),
       },
       DynamicCtr((len, _)) if u64::from(len) == 0 => Era,
-      OPS(opr) => {
+      OPS => {
         let rhs = Box::new(stream.read::<Tree>()?.into());
         let out = Box::new(stream.read::<Tree>()?.into());
-        Op {
-          rhs,
-          out,
-          op: TypedOp::try_from(u16::try_from(opr).unwrap()).unwrap(),
-        }
+        Op { fst: rhs, snd: out }
       }
       MAT => {
         let zero = Box::new(stream.read::<Tree>()?.into());
@@ -159,12 +147,14 @@ mod tests {
   #[test]
   fn test_tree_encoding() {
     let cases = [
-      "([* (#123 (#321 *))] [@a (* *)])",
-      "((@foo *) [* #123])",
-      "<+ #5 *>",
-      "<+ * *>",
-      "<- #5 #3>",
-      "<+ #5.5 *>",
+      "(* *)",
+      "({* *} *)",
+      "({* (123 (321 *))} {@a (* *)})",
+      "((@foo *) {* 123})",
+      "$(+ 5 *)",
+      // "$(+ * *)",
+      "$(- 5 3)",
+      "$(+ 5.5 *)",
     ];
     for tree_source in cases {
       let tree: Tree = hvmc::ast::Tree::from_str(tree_source).unwrap().into();

@@ -25,6 +25,12 @@ impl From<u64> for VarLenNumber {
   }
 }
 
+impl From<u32> for VarLenNumber {
+  fn from(n: u32) -> Self {
+    Self(n as u64)
+  }
+}
+
 impl From<i64> for VarLenNumber {
   fn from(n: i64) -> Self {
     Self(n as u64)
@@ -46,6 +52,12 @@ impl From<u16> for VarLenNumber {
 impl From<VarLenNumber> for u64 {
   fn from(n: VarLenNumber) -> Self {
     n.0
+  }
+}
+
+impl From<VarLenNumber> for u32 {
+  fn from(n: VarLenNumber) -> Self {
+    n.0 as u32
   }
 }
 
@@ -122,8 +134,8 @@ pub enum Tag {
   // FIXME: use a table for storing the ref's strings
   REF(HVMRef),
   VAR,
-  NUM((bool, VarLenNumber)),
-  OPS(u16),
+  NUM(VarLenNumber),
+  OPS,
   MAT,
   /// Has the label
   StandardCtr(VarLenNumber),
@@ -142,19 +154,9 @@ impl From<&hvmc::ast::Tree> for Tag {
       &Ctr { lab, ref ports } => DynamicCtr(((ports.len() as u64).into(), lab.into())),
       Var { .. } => VAR, // incorrect, but we don't know the index yet
       Ref { nam } => REF(nam.clone().into()),
-      // &Num { val } => NUM(val.into()),
-      // &Op1 { opr, .. } => OPS(u16::from(opr) as u32 | 0b10000), // set 5th bit to 1
-      // &Op2 { opr, .. } => OPS(u16::from(opr) as u32),
       Mat { .. } => MAT,
-      &Int { val } => NUM((false, val.into())),
-      F32 { val } => NUM((true, val.into_inner().into())),
-      Op { op, .. } => OPS((*op).into()),
-      Adt {
-        lab,
-        variant_index,
-        variant_count,
-        fields,
-      } => todo!(),
+      &Num { val } => NUM(val.into()),
+      Op { .. } => OPS,
     }
   }
 }

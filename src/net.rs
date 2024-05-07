@@ -121,7 +121,7 @@ mod tests {
       "(a a)",
       "a & * ~ (b R) & (b a) ~ (R *)",
       "(a (a b)) & (b *) ~ (c c)",
-      "((a [a b]) b)", // Y-Combinator
+      "((a {a b}) b)", // Y-Combinator
     ];
     for net in cases {
       let net: Net = hvmc::ast::Net::from_str(net).unwrap().into();
