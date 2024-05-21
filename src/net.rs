@@ -6,25 +6,25 @@ use bitbuffer::{BitRead, BitWrite, Endianness};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct Net(hvmc::ast::Net);
+pub struct Net(hvm::ast::Net);
 
-impl From<Net> for hvmc::ast::Net {
+impl From<Net> for hvm::ast::Net {
   fn from(value: Net) -> Self {
     value.0
   }
 }
 
-impl From<hvmc::ast::Net> for Net {
-  fn from(value: hvmc::ast::Net) -> Self {
+impl From<hvm::ast::Net> for Net {
+  fn from(value: hvm::ast::Net) -> Self {
     Self(value)
   }
 }
 
 impl Net {
-  fn get_trees(&mut self) -> Vec<&mut hvmc::ast::Tree> {
-    let Net(hvmc::ast::Net { root, redexes }) = self;
+  fn get_trees(&mut self) -> Vec<&mut hvm::ast::Tree> {
+    let Net(hvm::ast::Net { root, rbag: redexes }) = self;
     let mut trees = vec![root];
-    trees.append(&mut redexes.iter_mut().flat_map(|(a, b)| [a, b]).collect::<Vec<_>>());
+    trees.append(&mut redexes.iter_mut().flat_map(|(_, a, b)| [a, b]).collect::<Vec<_>>());
     trees
   }
 
@@ -64,11 +64,16 @@ impl Net {
 
 impl<E: Endianness> BitWrite<E> for Net {
   fn write(&self, stream: &mut bitbuffer::BitWriteStream<E>) -> bitbuffer::Result<()> {
-    let Net(hvmc::ast::Net { root, redexes }) = self;
+    let Net(hvm::ast::Net { root, rbag: redexes }) = self;
 
     stream.write::<Tree>(&root.clone().into())?;
     stream.write::<VarLenNumber>(&(redexes.len() as u64).into())?;
-    stream.write(&redexes.iter().map(|(a, b)| (a.clone().into(), b.clone().into())).collect::<Vec<(Tree, Tree)>>())?;
+    stream.write(
+      &redexes
+        .iter()
+        .map(|(_, a, b)| (a.clone().into(), b.clone().into()))
+        .collect::<Vec<(Tree, Tree)>>(),
+    )?;
     stream.write(&self.get_current_wiring())?;
 
     Ok(())
@@ -81,9 +86,9 @@ impl<E: Endianness> BitRead<'_, E> for Net {
     let redexes_len: u64 = stream.read::<VarLenNumber>()?.into();
     let redexes: Vec<(Tree, Tree)> = stream.read_sized(redexes_len as usize)?;
 
-    let mut net: Net = hvmc::ast::Net {
+    let mut net: Net = hvm::ast::Net {
       root: root.into(),
-      redexes: redexes.into_iter().map(|(a, b)| (a.into(), b.into())).collect::<Vec<_>>(),
+      rbag: redexes.into_iter().map(|(a, b)| (false, a.into(), b.into())).collect::<Vec<_>>(),
     }
     .into();
 
@@ -111,7 +116,7 @@ impl<'de> Deserialize<'de> for Net {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use std::str::FromStr;
+  use hvm::ast::CoreParser;
 
   #[test]
   fn test_net_encoding() {
@@ -124,7 +129,7 @@ mod tests {
       "((a {a b}) b)", // Y-Combinator
     ];
     for net in cases {
-      let net: Net = hvmc::ast::Net::from_str(net).unwrap().into();
+      let net: Net = CoreParser::new(net).parse_net().unwrap().into();
       let net_string = format!("{:?}", net);
 
       let bytes = encode(&net);

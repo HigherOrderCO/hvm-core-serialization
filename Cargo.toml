@@ -7,5 +7,5 @@ edition = "2021"
 
 [dependencies]
 bitbuffer = "0.10.9"
-hvm-core = { git = "https://github.com/HigherOrderCO/hvm-core", branch = "hvm32-compat" }
+hvm = { git = "https://github.com/HigherOrderCO/HVM", rev = "860916b907bb4a4d3549e204c74ab52b012e2b74" }
 serde = { version = "1.0.195", features = ["serde_derive"] }

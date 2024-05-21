@@ -55,14 +55,13 @@ where
 
 #[cfg(test)]
 mod tests {
-  use std::str::FromStr;
-
   use super::net::Net;
   use super::*;
+  use hvm::ast::CoreParser;
 
   #[test]
   fn test_big_endian() {
-    let net: Net = hvmc::ast::Net::from_str("a & (a *) ~ (b b)").unwrap().into();
+    let net: Net = CoreParser::new("a & (a *) ~ (b b)").parse_net().unwrap().into();
 
     let bytes = encode_endian(&net, BigEndian);
     let decoded_net: Net = decode_endian(&bytes, BigEndian);

@@ -137,26 +137,24 @@ pub enum Tag {
   NUM(VarLenNumber),
   OPS,
   MAT,
-  /// Has the label
-  StandardCtr(VarLenNumber),
-  /// Has the number of ports and the label
-  /// 0 ports is a ERA node
-  DynamicCtr((VarLenNumber, VarLenNumber)),
+  ERA,
+  CON,
+  DUP,
 }
 
-impl From<&hvmc::ast::Tree> for Tag {
-  fn from(value: &hvmc::ast::Tree) -> Self {
-    use hvmc::ast::Tree::*;
+impl From<&hvm::ast::Tree> for Tag {
+  fn from(value: &hvm::ast::Tree) -> Self {
+    use hvm::ast::Tree::*;
     use Tag::*;
     match value {
-      Era => DynamicCtr((0u64.into(), 0u64.into())),
-      &Ctr { lab, ref ports } if ports.len() == 2 => StandardCtr(lab.into()),
-      &Ctr { lab, ref ports } => DynamicCtr(((ports.len() as u64).into(), lab.into())),
+      Era => ERA, //DynamicCtr((0u64.into(), 0u64.into())),
+      Con { .. } => CON,
+      Dup { .. } => DUP,
       Var { .. } => VAR, // incorrect, but we don't know the index yet
       Ref { nam } => REF(nam.clone().into()),
-      Mat { .. } => MAT,
-      &Num { val } => NUM(val.into()),
-      Op { .. } => OPS,
+      Num { val } => NUM(val.0.into()),
+      Opr { .. } => OPS,
+      Swi { .. } => MAT,
     }
   }
 }

@@ -1,45 +1,30 @@
 use super::scalars::{HVMRef, Tag};
-use crate::scalars::VarLenNumber;
 use crate::{decode, encode};
 use bitbuffer::{BitRead, BitWrite, Endianness};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct Tree(hvmc::ast::Tree);
+pub struct Tree(hvm::ast::Tree);
 
-impl From<Tree> for hvmc::ast::Tree {
+impl From<Tree> for hvm::ast::Tree {
   fn from(value: Tree) -> Self {
     value.0
   }
 }
-impl From<hvmc::ast::Tree> for Tree {
-  fn from(value: hvmc::ast::Tree) -> Self {
+impl From<hvm::ast::Tree> for Tree {
+  fn from(value: hvm::ast::Tree) -> Self {
     Self(value)
   }
 }
 
 impl Tree {
-  pub fn gather_vars(tree: &mut hvmc::ast::Tree) -> Vec<&mut String> {
-    use hvmc::ast::Tree::*;
+  pub fn gather_vars(tree: &mut hvm::ast::Tree) -> Vec<&mut String> {
+    use hvm::ast::Tree::*;
     match tree {
       Var { nam } => vec![nam],
-      Ctr { ports, .. } => ports
-        .iter_mut()
-        .map(Self::gather_vars)
-        .reduce(|mut acc, mut e| {
-          acc.append(&mut e);
-          acc
-        })
-        .unwrap_or_default(),
-      Op { fst: rhs, snd: out, .. } => {
-        let mut vars = Self::gather_vars(rhs);
-        vars.append(&mut Self::gather_vars(out));
-        vars
-      }
-      Mat { zero, succ, out } => {
-        let mut vars = Self::gather_vars(zero);
-        vars.append(&mut Self::gather_vars(succ));
-        vars.append(&mut Self::gather_vars(out));
+      Con { fst, snd } | Dup { fst, snd } | Swi { fst, snd } | Opr { fst, snd } => {
+        let mut vars = Self::gather_vars(fst);
+        vars.append(&mut Self::gather_vars(snd));
         vars
       }
       _ => vec![],
@@ -50,28 +35,15 @@ impl Tree {
 // Traverse the tree pre-order and writes the tags(and data) of each node
 impl<E: Endianness> BitWrite<E> for Tree {
   fn write(&self, stream: &mut bitbuffer::BitWriteStream<E>) -> bitbuffer::Result<()> {
-    use hvmc::ast::Tree::*;
+    use hvm::ast::Tree::*;
 
     let Tree(node) = self;
     stream.write(&Tag::from(node))?;
 
     match node {
-      Ctr { ref ports, .. } if ports.len() == 2 => {
-        stream.write(&Tree(ports[0].clone()))?;
-        stream.write(&Tree(ports[1].clone()))?;
-      }
-      Ctr { ref ports, .. } => {
-        stream.write::<VarLenNumber>(&(ports.len() as u64).into())?;
-        stream.write(&ports.into_iter().map(|p| Tree(p.clone())).collect::<Vec<_>>())?;
-      }
-      Mat { zero, succ, out } => {
-        stream.write(&Tree(zero.as_ref().clone()))?;
-        stream.write(&Tree(succ.as_ref().clone()))?;
-        stream.write(&Tree(out.as_ref().clone()))?;
-      }
-      Op { fst: rhs, snd: out, .. } => {
-        stream.write(&Tree(rhs.as_ref().clone()))?;
-        stream.write(&Tree(out.as_ref().clone()))?;
+      Con { fst, snd } | Dup { fst, snd } | Swi { fst, snd } | Opr { fst, snd } => {
+        stream.write(&Tree(fst.as_ref().clone()))?;
+        stream.write(&Tree(snd.as_ref().clone()))?;
       }
       _ => {}
     }
@@ -82,43 +54,39 @@ impl<E: Endianness> BitWrite<E> for Tree {
 
 impl<E: Endianness> BitRead<'_, E> for Tree {
   fn read(stream: &mut bitbuffer::BitReadStream<'_, E>) -> bitbuffer::Result<Self> {
-    use hvmc::ast::Tree::*;
+    use hvm::ast::Tree::*;
     use Tag::*;
 
     let tag: Tag = stream.read()?;
     let tree = match tag {
       leaf @ (NUM(_) | REF(_) | VAR) => match leaf {
         REF(HVMRef(nam)) => Ref { nam },
-        NUM(val) => Num { val: val.into() },
+        NUM(val) => Num {
+          val: hvm::ast::Numb(val.into()),
+        },
         VAR => Var { nam: "invalid".to_string() },
         _ => unreachable!(),
       },
-      DynamicCtr((len, _)) if u64::from(len) == 0 => Era,
+      ERA => Era,
       OPS => {
         let rhs = Box::new(stream.read::<Tree>()?.into());
         let out = Box::new(stream.read::<Tree>()?.into());
-        Op { fst: rhs, snd: out }
+        Opr { fst: rhs, snd: out }
       }
       MAT => {
-        let zero = Box::new(stream.read::<Tree>()?.into());
-        let succ = Box::new(stream.read::<Tree>()?.into());
-        let out = Box::new(stream.read::<Tree>()?.into());
-        Mat { zero, succ, out }
+        let fst = Box::new(stream.read::<Tree>()?.into());
+        let snd = Box::new(stream.read::<Tree>()?.into());
+        Swi { fst, snd }
       }
-      StandardCtr(lab) => {
-        let lft = Box::new(stream.read::<Tree>()?.into());
-        let rgt = Box::new(stream.read::<Tree>()?.into());
-        Ctr {
-          lab: lab.into(),
-          ports: vec![*lft, *rgt],
-        }
+      CON => {
+        let fst = Box::new(stream.read::<Tree>()?.into());
+        let snd = Box::new(stream.read::<Tree>()?.into());
+        Con { fst, snd }
       }
-      DynamicCtr((len, lab)) => {
-        let ports: Vec<Tree> = stream.read_sized(u64::from(len) as usize)?;
-        Ctr {
-          lab: lab.into(),
-          ports: ports.into_iter().map(|p| p.0).collect(),
-        }
+      DUP => {
+        let fst = Box::new(stream.read::<Tree>()?.into());
+        let snd = Box::new(stream.read::<Tree>()?.into());
+        Dup { fst, snd }
       }
     };
     Ok(Self(tree))
@@ -141,7 +109,7 @@ impl<'de> Deserialize<'de> for Tree {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use std::str::FromStr;
+  use hvm::ast::CoreParser;
 
   // Tree-only encoding does not support variables
   #[test]
@@ -157,7 +125,7 @@ mod tests {
       "$(+ 5.5 *)",
     ];
     for tree_source in cases {
-      let tree: Tree = hvmc::ast::Tree::from_str(tree_source).unwrap().into();
+      let tree: Tree = CoreParser::new(tree_source).parse_tree().unwrap().into();
 
       let bytes = encode(&tree.clone());
       let decoded_tree: Tree = decode(&bytes);
