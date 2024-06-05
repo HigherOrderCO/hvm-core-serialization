@@ -119,10 +119,9 @@ mod tests {
       "({* *} *)",
       "({* (123 (321 *))} {@a (* *)})",
       "((@foo *) {* 123})",
-      "$(+ 5 *)",
-      // "$(+ * *)",
-      "$(- 5 3)",
-      "$(+ 5.5 *)",
+      "$([+5] *)",
+      "$([-5] 3)",
+      "$([+5.5] *)",
     ];
     for tree_source in cases {
       let tree: Tree = CoreParser::new(tree_source).parse_tree().unwrap().into();
